@@ -40,6 +40,7 @@ type deleteAppOpts struct {
 	deleteAppVars
 
 	// Interfaces to dependencies.
+	asker            *Asker
 	projectService   projectService
 	workspaceService wsAppDeleter
 	sessProvider     sessionProvider
@@ -61,8 +62,8 @@ func newDeleteAppOpts(vars deleteAppVars) (*deleteAppOpts, error) {
 	}
 
 	return &deleteAppOpts{
-		deleteAppVars: vars,
-
+		deleteAppVars:    vars,
+		asker:            NewAsker(projectService, vars.prompt),
 		workspaceService: workspaceService,
 		projectService:   projectService,
 		spinner:          termprogress.NewSpinner(),
@@ -159,36 +160,13 @@ func (o *deleteAppOpts) askAppName() error {
 		return nil
 	}
 
-	names, err := o.retrieveAppNames()
-	if err != nil {
-		return err
-	}
-	if len(names) == 0 {
-		return fmt.Errorf("couldn't find any application in the project %s", o.ProjectName())
-	}
-	if len(names) == 1 {
-		o.AppName = names[0]
-		log.Infof("Only found one application, defaulting to: %s\n", color.HighlightUserInput(o.AppName))
-		return nil
-	}
-	name, err := o.prompt.SelectOne(appDeleteNamePrompt, "", names)
-	if err != nil {
-		return fmt.Errorf("select application to delete: %w", err)
-	}
-	o.AppName = name
-	return nil
-}
+	appName, err := o.asker.SelectApp(&SelectAppInput{
+		Project: o.ProjectName(),
+		Prompt:  appDeleteNamePrompt,
+	})
 
-func (o *deleteAppOpts) retrieveAppNames() ([]string, error) {
-	apps, err := o.projectService.ListApplications(o.ProjectName())
-	if err != nil {
-		return nil, fmt.Errorf("get app names: %w", err)
-	}
-	var names []string
-	for _, app := range apps {
-		names = append(names, app.Name)
-	}
-	return names, nil
+	o.AppName = appName
+	return err
 }
 
 func (o *deleteAppOpts) sourceProjectEnvironments() error {

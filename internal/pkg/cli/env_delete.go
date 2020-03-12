@@ -55,6 +55,7 @@ type deleteEnvVars struct {
 type deleteEnvOpts struct {
 	deleteEnvVars
 	// Interfaces for dependencies.
+	asker         *Asker
 	storeClient   archer.EnvironmentStore
 	rgClient      resourceGetter
 	deployClient  environmentDeployer
@@ -78,6 +79,7 @@ func newDeleteEnvOpts(vars deleteEnvVars) (*deleteEnvOpts, error) {
 	return &deleteEnvOpts{
 		deleteEnvVars: vars,
 		storeClient:   store,
+		asker:         NewAsker(store, vars.prompt),
 		profileConfig: cfg,
 		prog:          termprogress.NewSpinner(),
 		initProfileClients: func(o *deleteEnvOpts) error {
@@ -198,28 +200,13 @@ func (o *deleteEnvOpts) askEnvName() error {
 		return nil
 	}
 
-	envs, err := o.storeClient.ListEnvironments(o.ProjectName())
-	if err != nil {
-		return fmt.Errorf("list environments under project %s: %w", o.ProjectName(), err)
-	}
-	var names []string
-	for _, env := range envs {
-		names = append(names, env.Name)
-	}
-	if len(names) == 0 {
-		return fmt.Errorf("couldn't find any environment in the project %s", o.ProjectName())
-	}
-	if len(names) == 1 {
-		o.EnvName = names[0]
-		log.Infof("Only found one environment, defaulting to: %s\n", color.HighlightUserInput(o.EnvName))
-		return nil
-	}
-	name, err := o.prompt.SelectOne(envDeleteNamePrompt, "", names)
-	if err != nil {
-		return fmt.Errorf("prompt for environment name: %w", err)
-	}
-	o.EnvName = name
-	return nil
+	envName, err := o.asker.SelectEnv(&SelectEnvInput{
+		Project: o.ProjectName(),
+		Prompt:  envDeleteNamePrompt,
+	})
+
+	o.EnvName = envName
+	return err
 }
 
 func (o *deleteEnvOpts) askProfile() error {

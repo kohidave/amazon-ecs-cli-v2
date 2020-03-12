@@ -50,7 +50,7 @@ type appDeployVars struct {
 
 type appDeployOpts struct {
 	appDeployVars
-
+	asker              *Asker
 	projectService     projectService
 	workspaceService   wsAppReader
 	ecrService         ecrService
@@ -84,8 +84,8 @@ func newAppDeployOpts(vars appDeployVars) (*appDeployOpts, error) {
 	}
 
 	return &appDeployOpts{
-		appDeployVars: vars,
-
+		appDeployVars:    vars,
+		asker:            NewAsker(projectService, vars.prompt),
 		projectService:   projectService,
 		workspaceService: workspaceService,
 		spinner:          termprogress.NewSpinner(),
@@ -199,25 +199,14 @@ func (o *appDeployOpts) askAppName() error {
 		return nil
 	}
 
-	names, err := o.workspaceService.AppNames()
-	if err != nil {
-		return fmt.Errorf("list applications in workspace: %w", err)
-	}
-	if len(names) == 0 {
-		return errors.New("no applications found in the workspace")
-	}
-	if len(names) == 1 {
-		o.AppName = names[0]
-		log.Infof("Only found one app, defaulting to: %s\n", color.HighlightUserInput(o.AppName))
-		return nil
-	}
+	appName, err := o.asker.SelectApp(&SelectAppInput{
+		Project:   o.ProjectName(),
+		Prompt:    "Select an application",
+		LocalOnly: true,
+	})
 
-	selectedAppName, err := o.prompt.SelectOne("Select an application", "", names)
-	if err != nil {
-		return fmt.Errorf("select app name: %w", err)
-	}
-	o.AppName = selectedAppName
-	return nil
+	o.AppName = appName
+	return err
 }
 
 func (o *appDeployOpts) askEnvName() error {
@@ -225,33 +214,13 @@ func (o *appDeployOpts) askEnvName() error {
 		return nil
 	}
 
-	envs, err := o.projectService.ListEnvironments(o.ProjectName())
-	if err != nil {
-		return fmt.Errorf("get environments for project %s from metadata store: %w", o.ProjectName(), err)
-	}
-	if len(envs) == 0 {
-		log.Infof("Couldn't find any environments associated with project %s, try initializing one: %s\n",
-			color.HighlightUserInput(o.ProjectName()),
-			color.HighlightCode("ecs-preview env init"))
-		return fmt.Errorf("no environments found in project %s", o.ProjectName())
-	}
-	if len(envs) == 1 {
-		o.EnvName = envs[0].Name
-		log.Infof("Only found one environment, defaulting to: %s\n", color.HighlightUserInput(o.EnvName))
-		return nil
-	}
+	envName, err := o.asker.SelectEnv(&SelectEnvInput{
+		Project: o.ProjectName(),
+		Prompt:  "Select an environment",
+	})
 
-	var names []string
-	for _, env := range envs {
-		names = append(names, env.Name)
-	}
-
-	selectedEnvName, err := o.prompt.SelectOne("Select an environment", "", names)
-	if err != nil {
-		return fmt.Errorf("select env name: %w", err)
-	}
-	o.EnvName = selectedEnvName
-	return nil
+	o.EnvName = envName
+	return err
 }
 
 func (o *appDeployOpts) askImageTag() error {

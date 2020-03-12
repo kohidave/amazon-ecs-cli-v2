@@ -4,14 +4,12 @@
 package cli
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"sort"
 
 	"github.com/aws/amazon-ecs-cli-v2/internal/pkg/describe"
 	"github.com/aws/amazon-ecs-cli-v2/internal/pkg/store"
-	"github.com/aws/amazon-ecs-cli-v2/internal/pkg/term/color"
 	"github.com/aws/amazon-ecs-cli-v2/internal/pkg/term/log"
 	"github.com/aws/amazon-ecs-cli-v2/internal/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -33,7 +31,7 @@ type showAppVars struct {
 
 type showAppOpts struct {
 	showAppVars
-
+	asker         *Asker
 	w             io.Writer
 	storeSvc      storeReader
 	describer     webAppDescriber
@@ -54,6 +52,7 @@ func newShowAppOpts(vars showAppVars) (*showAppOpts, error) {
 	return &showAppOpts{
 		showAppVars: vars,
 		storeSvc:    ssmStore,
+		asker:       NewAsker(ssmStore, vars.prompt),
 		ws:          ws,
 		w:           log.OutputWriter,
 		initDescriber: func(o *showAppOpts) error {
@@ -197,95 +196,27 @@ func (o *showAppOpts) askProject() error {
 	if o.ProjectName() != "" {
 		return nil
 	}
-	projNames, err := o.retrieveProjects()
-	if err != nil {
-		return err
-	}
-	if len(projNames) == 0 {
-		return fmt.Errorf("no project found: run %s please", color.HighlightCode("project init"))
-	}
-	proj, err := o.prompt.SelectOne(
-		applicationShowProjectNamePrompt,
-		applicationShowProjectNameHelpPrompt,
-		projNames,
-	)
-	if err != nil {
-		return fmt.Errorf("select projects: %w", err)
-	}
-	o.projectName = proj
 
-	return nil
+	projectName, err := o.asker.SelectProject(&SelectProjectInput{
+		Prompt:     applicationShowProjectNamePrompt,
+		HelpPrompt: applicationShowProjectNameHelpPrompt,
+	})
+	o.projectName = projectName
+	return err
 }
 
 func (o *showAppOpts) askAppName() error {
-	// return if app name is set by flag
 	if o.appName != "" {
 		return nil
 	}
 
-	appNames, err := o.retrieveLocalApplication()
-	if err != nil {
-		appNames, err = o.retrieveAllApplications()
-		if err != nil {
-			return err
-		}
-	}
+	appName, err := o.asker.SelectApp(&SelectAppInput{
+		Project: o.ProjectName(),
+		Prompt:  applicationShowAppNamePrompt,
+	})
 
-	if len(appNames) == 0 {
-		log.Infof("No applications found in project %s\n.", color.HighlightUserInput(o.ProjectName()))
-		return nil
-	}
-	if len(appNames) == 1 {
-		o.appName = appNames[0]
-		return nil
-	}
-	appName, err := o.prompt.SelectOne(
-		fmt.Sprintf(applicationShowAppNamePrompt, color.HighlightUserInput(o.ProjectName())),
-		applicationShowAppNameHelpPrompt,
-		appNames,
-	)
-	if err != nil {
-		return fmt.Errorf("select applications for project %s: %w", o.ProjectName(), err)
-	}
 	o.appName = appName
-
-	return nil
-}
-
-func (o *showAppOpts) retrieveProjects() ([]string, error) {
-	projs, err := o.storeSvc.ListProjects()
-	if err != nil {
-		return nil, fmt.Errorf("list projects: %w", err)
-	}
-	projNames := make([]string, len(projs))
-	for ind, proj := range projs {
-		projNames[ind] = proj.Name
-	}
-	return projNames, nil
-}
-
-func (o *showAppOpts) retrieveLocalApplication() ([]string, error) {
-	localAppNames, err := o.ws.AppNames()
-	if err != nil {
-		return nil, err
-	}
-	if len(localAppNames) == 0 {
-		return nil, errors.New("no application found")
-	}
-	return localAppNames, nil
-}
-
-func (o *showAppOpts) retrieveAllApplications() ([]string, error) {
-	apps, err := o.storeSvc.ListApplications(o.ProjectName())
-	if err != nil {
-		return nil, fmt.Errorf("list applications for project %s: %w", o.ProjectName(), err)
-	}
-	appNames := make([]string, len(apps))
-	for ind, app := range apps {
-		appNames[ind] = app.Name
-	}
-
-	return appNames, nil
+	return err
 }
 
 // BuildAppShowCmd builds the command for showing applications in a project.

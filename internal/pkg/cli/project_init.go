@@ -34,6 +34,7 @@ type initProjectVars struct {
 
 type initProjectOpts struct {
 	initProjectVars
+	asker *Asker
 
 	identity     identityService
 	projectStore archer.ProjectStore
@@ -56,14 +57,15 @@ func newInitProjectOpts(vars initProjectVars) (*initProjectOpts, error) {
 	if err != nil {
 		return nil, err
 	}
-
+	prompt := prompt.New()
 	return &initProjectOpts{
 		initProjectVars: vars,
 		identity:        identity.New(sess),
 		projectStore:    store,
+		asker:           NewAsker(store, prompt),
 		ws:              ws,
 		deployer:        cloudformation.New(sess),
-		prompt:          prompt.New(),
+		prompt:          prompt,
 		prog:            termprogress.NewSpinner(),
 	}, nil
 }
@@ -116,7 +118,7 @@ func (o *initProjectOpts) Ask() error {
 	}
 	if useExistingProject {
 		log.Infoln("Ok, here are your existing projects.")
-		return o.askSelectExistingProjectName(existingProjects)
+		return o.askSelectExistingProjectName()
 	}
 	log.Infoln("Ok, let's create a new project then.")
 	return o.askNewProjectName()
@@ -178,19 +180,19 @@ func (o *initProjectOpts) askNewProjectName() error {
 	return nil
 }
 
-func (o *initProjectOpts) askSelectExistingProjectName(existingProjects []*archer.Project) error {
-	var projectNames []string
-	for _, p := range existingProjects {
-		projectNames = append(projectNames, p.Name)
-	}
-	projectName, err := o.prompt.SelectOne(
-		fmt.Sprintf("Which %s do you want to add a new application to?", color.Emphasize("existing project")),
-		"Applications in the same project share the same VPC, ECS Cluster and are discoverable via service discovery.",
-		projectNames)
+func (o *initProjectOpts) askSelectExistingProjectName() error {
+
+	projectName, err := o.asker.SelectProject(&SelectProjectInput{
+		Prompt:     fmt.Sprintf("Which %s do you want to add a new application to?", color.Emphasize("existing project")),
+		HelpPrompt: "Applications in the same project share the same VPC, ECS Cluster and are discoverable via service discovery.",
+	})
+
 	if err != nil {
 		return fmt.Errorf("prompt select project name: %w", err)
 	}
+
 	o.ProjectName = projectName
+
 	return nil
 }
 

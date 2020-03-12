@@ -14,7 +14,6 @@ import (
 
 	"github.com/aws/amazon-ecs-cli-v2/internal/pkg/archer"
 	"github.com/aws/amazon-ecs-cli-v2/internal/pkg/store"
-	"github.com/aws/amazon-ecs-cli-v2/internal/pkg/term/log"
 	"github.com/aws/amazon-ecs-cli-v2/internal/pkg/workspace"
 	"github.com/spf13/cobra"
 )
@@ -39,7 +38,7 @@ type listAppVars struct {
 
 type listAppOpts struct {
 	listAppVars
-
+	asker         *Asker
 	applications  []*archer.Application
 	appLister     archer.ApplicationLister
 	projectGetter archer.ProjectGetter
@@ -60,35 +59,14 @@ func newListAppOpts(vars listAppVars) (*listAppOpts, error) {
 	}
 
 	return &listAppOpts{
-		listAppVars: vars,
-
+		listAppVars:   vars,
+		asker:         NewAsker(ssmStore, vars.prompt),
 		projectGetter: ssmStore,
 		appLister:     ssmStore,
 		projectLister: ssmStore,
 		ws:            ws,
 		w:             os.Stdout,
 	}, nil
-}
-
-func (opts *listAppOpts) selectProject() (string, error) {
-	projs, err := opts.projectLister.ListProjects()
-	if err != nil {
-		return "", err
-	}
-	var projNames []string
-	for _, proj := range projs {
-		projNames = append(projNames, proj.Name)
-	}
-	if len(projNames) == 0 {
-		log.Infoln("There are no projects to select.")
-		return "", nil
-	}
-	proj, err := opts.prompt.SelectOne(
-		applicationListProjectNamePrompt,
-		applicationListProjectNameHelpPrompt,
-		projNames,
-	)
-	return proj, err
 }
 
 func (opts *listAppOpts) localAppsFilter(appNames []string) {
@@ -111,13 +89,13 @@ func (opts *listAppOpts) Ask() error {
 	if opts.ProjectName() != "" {
 		return nil
 	}
-	projectName, err := opts.selectProject()
-	if err != nil {
-		return fmt.Errorf("failed to get project name: %w", err)
-	}
+	projectName, err := opts.asker.SelectProject(&SelectProjectInput{
+		Prompt:     applicationListProjectNamePrompt,
+		HelpPrompt: applicationListProjectNameHelpPrompt,
+	})
 	opts.projectName = projectName
 
-	return nil
+	return err
 }
 
 // Execute lists the applications through the prompt.

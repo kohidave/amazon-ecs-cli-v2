@@ -12,7 +12,6 @@ import (
 
 	"github.com/aws/amazon-ecs-cli-v2/internal/pkg/archer"
 	"github.com/aws/amazon-ecs-cli-v2/internal/pkg/store"
-	"github.com/aws/amazon-ecs-cli-v2/internal/pkg/term/log"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
@@ -29,6 +28,7 @@ type listEnvVars struct {
 
 type listEnvOpts struct {
 	listEnvVars
+	asker *Asker
 
 	manager       archer.EnvironmentLister
 	projectGetter archer.ProjectGetter
@@ -45,6 +45,7 @@ func newListEnvOpts(vars listEnvVars) (*listEnvOpts, error) {
 
 	return &listEnvOpts{
 		listEnvVars:   vars,
+		asker:         NewAsker(ssmStore, vars.prompt),
 		manager:       ssmStore,
 		projectGetter: ssmStore,
 		projectLister: ssmStore,
@@ -52,33 +53,17 @@ func newListEnvOpts(vars listEnvVars) (*listEnvOpts, error) {
 	}, nil
 }
 
-func (o *listEnvOpts) selectProject() (string, error) {
-	projs, err := o.projectLister.ListProjects()
-	if err != nil {
-		return "", err
-	}
-	var projStrs []string
-	for _, projStr := range projs {
-		projStrs = append(projStrs, projStr.Name)
-	}
-	if len(projStrs) == 0 {
-		log.Infoln("There are no projects to select.")
-		return "", nil
-	}
-	proj, err := o.prompt.SelectOne(
-		environmentListProjectNamePrompt,
-		environmentListProjectNameHelper,
-		projStrs,
-	)
-	return proj, err
-}
-
 // Ask asks for fields that are required but not passed in.
 func (o *listEnvOpts) Ask() error {
 	if o.ProjectName() != "" {
 		return nil
 	}
-	projectName, err := o.selectProject()
+
+	projectName, err := o.asker.SelectProject(&SelectProjectInput{
+		Prompt:     environmentListProjectNamePrompt,
+		HelpPrompt: environmentListProjectNameHelper,
+	})
+
 	if err != nil {
 		return fmt.Errorf("failed to get project name: %w", err)
 	}

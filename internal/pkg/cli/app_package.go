@@ -52,6 +52,7 @@ type packageAppOpts struct {
 	packageAppVars
 
 	// Interfaces to interact with dependencies.
+	asker         *Asker
 	addonsSvc     templater
 	initAddonsSvc func(*packageAppOpts) error // Overriden in tests.
 	ws            wsAppReader
@@ -84,6 +85,7 @@ func newPackageAppOpts(vars packageAppVars) (*packageAppOpts, error) {
 		initAddonsSvc:  initPackageAddonsSvc,
 		ws:             ws,
 		store:          store,
+		asker:          NewAsker(store, vars.prompt),
 		describer:      cloudformation.New(sess),
 		runner:         command.New(),
 		stackWriter:    os.Stdout,
@@ -176,23 +178,13 @@ func (o *packageAppOpts) askAppName() error {
 		return nil
 	}
 
-	appNames, err := o.ws.AppNames()
-	if err != nil {
-		return fmt.Errorf("list applications in workspace: %w", err)
-	}
-	if len(appNames) == 0 {
-		return errors.New("there are no applications in the workspace, run `ecs-preview init` first")
-	}
-	if len(appNames) == 1 {
-		o.AppName = appNames[0]
-		return nil
-	}
-	appName, err := o.prompt.SelectOne(appPackageAppNamePrompt, "", appNames)
-	if err != nil {
-		return fmt.Errorf("prompt application name: %w", err)
-	}
+	appName, err := o.asker.SelectApp(&SelectAppInput{
+		Project: o.ProjectName(),
+		Prompt:  appPackageAppNamePrompt,
+	})
+
 	o.AppName = appName
-	return nil
+	return err
 }
 
 func (o *packageAppOpts) askEnvName() error {
@@ -200,23 +192,13 @@ func (o *packageAppOpts) askEnvName() error {
 		return nil
 	}
 
-	envNames, err := o.listEnvNames()
-	if err != nil {
-		return err
-	}
-	if len(envNames) == 0 {
-		return fmt.Errorf("there are no environments in project %s", o.ProjectName())
-	}
-	if len(envNames) == 1 {
-		o.EnvName = envNames[0]
-		return nil
-	}
-	envName, err := o.prompt.SelectOne(appPackageEnvNamePrompt, "", envNames)
-	if err != nil {
-		return fmt.Errorf("prompt environment name: %w", err)
-	}
+	envName, err := o.asker.SelectEnv(&SelectEnvInput{
+		Project: o.ProjectName(),
+		Prompt:  appPackageEnvNamePrompt,
+	})
+
 	o.EnvName = envName
-	return nil
+	return err
 }
 
 func (o *packageAppOpts) askTag() error {
@@ -358,18 +340,6 @@ func contains(s string, items []string) bool {
 		}
 	}
 	return false
-}
-
-func (o *packageAppOpts) listEnvNames() ([]string, error) {
-	envs, err := o.store.ListEnvironments(o.ProjectName())
-	if err != nil {
-		return nil, fmt.Errorf("list environments for project %s: %w", o.ProjectName(), err)
-	}
-	var names []string
-	for _, env := range envs {
-		names = append(names, env.Name)
-	}
-	return names, nil
 }
 
 type errRepoNotFound struct {

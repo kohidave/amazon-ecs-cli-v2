@@ -9,7 +9,6 @@ import (
 
 	"github.com/aws/amazon-ecs-cli-v2/internal/pkg/describe"
 	"github.com/aws/amazon-ecs-cli-v2/internal/pkg/store"
-	"github.com/aws/amazon-ecs-cli-v2/internal/pkg/term/color"
 	"github.com/aws/amazon-ecs-cli-v2/internal/pkg/term/log"
 	"github.com/spf13/cobra"
 )
@@ -21,7 +20,7 @@ type showProjectVars struct {
 
 type showProjectOpts struct {
 	showProjectVars
-
+	asker    *Asker
 	storeSvc storeReader
 	w        io.Writer
 }
@@ -36,6 +35,7 @@ func newShowProjectOpts(vars showProjectVars) (*showProjectOpts, error) {
 		showProjectVars: vars,
 		storeSvc:        ssmStore,
 		w:               log.OutputWriter,
+		asker:           NewAsker(ssmStore, vars.prompt),
 	}, nil
 }
 
@@ -119,36 +119,14 @@ func (o *showProjectOpts) askProject() error {
 	if o.ProjectName() != "" {
 		return nil
 	}
-	projNames, err := o.retrieveProjects()
-	if err != nil {
-		return err
-	}
-	if len(projNames) == 0 {
-		return fmt.Errorf("no project found: run %s to set one up, or %s into your workspace please", color.HighlightCode("project init"), color.HighlightCode("cd"))
-	}
-	proj, err := o.prompt.SelectOne(
-		applicationShowProjectNamePrompt,
-		applicationShowProjectNameHelpPrompt,
-		projNames,
-	)
-	if err != nil {
-		return fmt.Errorf("select project: %w", err)
-	}
-	o.projectName = proj
 
-	return nil
-}
+	projectName, err := o.asker.SelectProject(&SelectProjectInput{
+		Prompt:     applicationShowProjectNamePrompt,
+		HelpPrompt: applicationShowProjectNameHelpPrompt,
+	})
 
-func (o *showProjectOpts) retrieveProjects() ([]string, error) {
-	projs, err := o.storeSvc.ListProjects()
-	if err != nil {
-		return nil, fmt.Errorf("list project: %w", err)
-	}
-	projNames := make([]string, len(projs))
-	for ind, proj := range projs {
-		projNames[ind] = proj.Name
-	}
-	return projNames, nil
+	o.projectName = projectName
+	return err
 }
 
 // BuildProjectShowCmd builds the command for showing details of a project.

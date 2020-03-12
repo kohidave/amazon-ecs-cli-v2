@@ -52,6 +52,7 @@ type appLogsVars struct {
 
 type appLogsOpts struct {
 	appLogsVars
+	asker *Asker
 
 	// internal states
 	startTime int64
@@ -73,6 +74,7 @@ func newAppLogOpts(vars appLogsVars) (*appLogsOpts, error) {
 		appLogsVars: vars,
 		w:           log.OutputWriter,
 		storeSvc:    ssmStore,
+		asker:       NewAsker(ssmStore, vars.prompt),
 		initCwLogsSvc: func(o *appLogsOpts, env *archer.Environment) error {
 			sess, err := session.NewProvider().FromRole(env.ManagerRoleARN, env.Region)
 			if err != nil {
@@ -171,24 +173,13 @@ func (o *appLogsOpts) askProject() error {
 	if o.ProjectName() != "" {
 		return nil
 	}
-	projNames, err := o.retrieveProjectNames()
-	if err != nil {
-		return err
-	}
-	if len(projNames) == 0 {
-		return fmt.Errorf("no project found: run %s please", color.HighlightCode("project init"))
-	}
-	proj, err := o.prompt.SelectOne(
-		applicationLogProjectNamePrompt,
-		applicationLogProjectNameHelpPrompt,
-		projNames,
-	)
-	if err != nil {
-		return fmt.Errorf("select projects: %w", err)
-	}
-	o.projectName = proj
 
-	return nil
+	projectName, err := o.asker.SelectProject(&SelectProjectInput{
+		Prompt:     applicationListProjectNamePrompt,
+		HelpPrompt: applicationListProjectNameHelpPrompt,
+	})
+	o.projectName = projectName
+	return err
 }
 
 func (o *appLogsOpts) generateGetLogEventOpts() []cloudwatchlogs.GetLogEventsOpts {
@@ -288,18 +279,6 @@ func (o *appLogsOpts) askAppEnvName() error {
 	o.envName = appEnvs[appEnvName].envName
 
 	return nil
-}
-
-func (o *appLogsOpts) retrieveProjectNames() ([]string, error) {
-	projs, err := o.storeSvc.ListProjects()
-	if err != nil {
-		return nil, fmt.Errorf("list projects: %w", err)
-	}
-	projNames := make([]string, len(projs))
-	for ind, proj := range projs {
-		projNames[ind] = proj.Name
-	}
-	return projNames, nil
 }
 
 func (o *appLogsOpts) retrieveAllAppNames() ([]string, error) {
