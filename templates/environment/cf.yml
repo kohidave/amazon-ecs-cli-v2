@@ -193,6 +193,7 @@ Resources:
           Value: !Sub 'ecs-${ProjectName}-${EnvironmentName}-env'
 
   EnvironmentSecurityGroupIngressFromPublicALB:
+    Condition: CreatePublicLoadBalancer
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
       Description: Ingress from the public ALB
@@ -220,6 +221,7 @@ Resources:
   # Assign a dummy target group that with no real services as targets, so that we can create
   # the listeners for the services.
   DefaultHTTPTargetGroup:
+    Condition: CreatePublicLoadBalancer
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       #  Check if your application is healthy within 20 = 10*2 seconds, compared to 2.5 mins = 30*5 seconds.
@@ -236,6 +238,7 @@ Resources:
 
   HTTPListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: CreatePublicLoadBalancer
     Properties:
       DefaultActions:
         - TargetGroupArn: !Ref DefaultHTTPTargetGroup

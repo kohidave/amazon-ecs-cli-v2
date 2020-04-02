@@ -20,6 +20,7 @@ const (
 	lbFargateAppTemplatePath              = "lb-fargate-service/cf.yml"
 	lbFargateAppParamsPath                = "lb-fargate-service/params.json.tmpl"
 	lbFargateAppRulePriorityGeneratorPath = "custom-resources/alb-rule-priority-generator.js"
+	envFeatureAddonPath                   = "custom-resources/env-feature.js"
 )
 
 // Parameter logical IDs for a load balanced Fargate service.
@@ -91,18 +92,24 @@ func (c *LBFargateStackConfig) Template() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	environmentFeatureLambda, err := c.parser.Read(envFeatureAddonPath)
+	if err != nil {
+		return "", err
+	}
 	outputs, err := c.addonsOutputs()
 	if err != nil {
 		return "", err
 	}
 	content, err := c.parser.Parse(lbFargateAppTemplatePath, struct {
-		RulePriorityLambda string
-		AddonsOutputs      []addons.Output
+		RulePriorityLambda       string
+		EnvironmentFeatureLambda string
+		AddonsOutputs            []addons.Output
 		*lbFargateTemplateParams
 	}{
-		RulePriorityLambda:      rulePriorityLambda.String(),
-		AddonsOutputs:           outputs,
-		lbFargateTemplateParams: c.toTemplateParams(),
+		RulePriorityLambda:       rulePriorityLambda.String(),
+		EnvironmentFeatureLambda: environmentFeatureLambda.String(),
+		AddonsOutputs:            outputs,
+		lbFargateTemplateParams:  c.toTemplateParams(),
 	}, template.WithFuncs(map[string]interface{}{
 		"toSnakeCase":           toSnakeCase,
 		"filterSecrets":         filterSecrets,
